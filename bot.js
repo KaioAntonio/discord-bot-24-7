@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, VoiceConnectionStatus, entersState, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const { Readable } = require('stream');
 
@@ -22,7 +22,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences // <-- ADICIONADO
     ]
 });
 
@@ -30,7 +31,6 @@ const TOKEN = process.env.TOKEN;
 let connection = null;
 let player = null;
 
-// Função para criar um stream de áudio silencioso
 function createSilenceStream() {
     const silenceFrame = Buffer.from([0xF8, 0xFF, 0xFE]);
     
@@ -46,6 +46,15 @@ function createSilenceStream() {
 client.on('ready', () => {
     console.log(`✅ Bot conectado como ${client.user.tag}`);
     console.log('✅ Use !join para o bot entrar no canal de voz');
+    
+    // Define status como ONLINE com atividade
+    client.user.setPresence({
+        activities: [{ 
+            name: '!join para entrar | !help', 
+            type: ActivityType.Listening 
+        }],
+        status: 'online',
+    });
 });
 
 client.on('messageCreate', async (message) => {
