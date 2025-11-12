@@ -1,5 +1,21 @@
+require('dotenv').config();
+const express = require('express');
 const { Client, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, VoiceConnectionStatus, entersState, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
+const { Readable } = require('stream');
+
+// ===== SERVIDOR HTTP PARA O RENDER =====
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+app.get('/', (req, res) => {
+    res.send('🤖 Bot está online e funcionando!');
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`);
+});
+// ===== FIM DO SERVIDOR HTTP =====
 
 const client = new Client({
     intents: [
@@ -12,6 +28,20 @@ const client = new Client({
 
 const TOKEN = process.env.TOKEN;
 let connection = null;
+let player = null;
+
+// Função para criar um stream de áudio silencioso
+function createSilenceStream() {
+    const silenceFrame = Buffer.from([0xF8, 0xFF, 0xFE]);
+    
+    class SilenceStream extends Readable {
+        _read() {
+            this.push(silenceFrame);
+        }
+    }
+    
+    return new SilenceStream();
+}
 
 client.on('ready', () => {
     console.log(`✅ Bot conectado como ${client.user.tag}`);
@@ -36,9 +66,29 @@ client.on('messageCreate', async (message) => {
             });
 
             await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+
+            player = createAudioPlayer();
             
-            console.log('✅ Conectado ao canal de voz!');
-            message.reply('✅ Entrei no canal de voz! Vou ficar aqui 24/7');
+            const resource = createAudioResource(createSilenceStream(), {
+                inputType: StreamType.Arbitrary,
+                inlineVolume: true
+            });
+            
+            resource.volume.setVolume(0);
+            player.play(resource);
+            connection.subscribe(player);
+            
+            player.on(AudioPlayerStatus.Idle, () => {
+                const newResource = createAudioResource(createSilenceStream(), {
+                    inputType: StreamType.Arbitrary,
+                    inlineVolume: true
+                });
+                newResource.volume.setVolume(0);
+                player.play(newResource);
+            });
+
+            console.log('✅ Conectado e tocando áudio silencioso (Anti-AFK ativo)');
+            message.reply('✅ Entrei no canal! Estou tocando áudio silencioso para nunca ser kickado por AFK 🎵🔇');
 
             connection.on(VoiceConnectionStatus.Disconnected, async () => {
                 try {
@@ -49,6 +99,7 @@ client.on('messageCreate', async (message) => {
                 } catch (error) {
                     connection.destroy();
                     connection = null;
+                    player = null;
                     console.log('❌ Desconectado do canal de voz');
                 }
             });
@@ -61,6 +112,10 @@ client.on('messageCreate', async (message) => {
 
     if (message.content === '!leave') {
         if (connection) {
+            if (player) {
+                player.stop();
+                player = null;
+            }
             connection.destroy();
             connection = null;
             message.reply('👋 Saí do canal de voz!');
@@ -70,9 +125,8 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // Comando de ajuda
     if (message.content === '!help') {
-        message.reply('**Comandos disponíveis:**\n`!join` - Bot entra no seu canal de voz\n`!leave` - Bot sai do canal de voz\n`!help` - Mostra esta mensagem');
+        message.reply('**Comandos:**\n`!join` - Entra no canal (Anti-AFK ativo)\n`!leave` - Sai do canal\n`!help` - Ajuda');
     }
 });
 
